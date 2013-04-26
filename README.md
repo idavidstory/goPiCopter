@@ -35,7 +35,7 @@ goPiCopter
 I'm sure you can do it cheaper and lighter, I started out just purchasing the sensors to go with my Raspberry Pi to see if I could write a controller
 I'd be happy with.  I'm getting closer, but it is still a work in progress.
 
-The IMU tells you where you are at (Yaw,Pitch,Roll). I need to write a flight controller that takes that, and applys the desired direction from the Remote Control to determine how much power to apply to the motors.
+The IMU tells you where you are at (Yaw,Pitch,Roll). I need to write a flight controller that takes that, and applies the desired direction from the Remote Control to determine how much power to apply to the motors.
 
 For the Remote Control, I'm thinking a simple interface on a phone/tablet that communicates to the quadcopter via wifi.
 

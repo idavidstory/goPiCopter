@@ -1,6 +1,7 @@
 package sensors
 
 import (
+	"errors"
 	"goPiCopter/i2c"
 )
 
@@ -46,7 +47,14 @@ const (
 )
 
 type LSM303ACCEL struct {
-	bus *i2c.I2CBus
+	bus       *i2c.I2CBus
+	biasX     float32
+	biasY     float32
+	biasZ     float32
+	sampleX   int
+	sampleY   int
+	sampleZ   int
+	sampleCnt int
 }
 
 // Return a new Device
@@ -74,19 +82,70 @@ func (bp *LSM303ACCEL) WriteRegister(reg byte, data byte) (err error) {
 	return
 }
 
-// Read the X, Y, and Z values from their registers,
-// and adjust.
-func (bp *LSM303ACCEL) ReadXYZ() (x, y, z float32, err error) {
+// Read the raw x, y, z values from their registers
+func (bp *LSM303ACCEL) ReadRaw() (x, y, z int16, err error) {
 	var bytes []byte
 	bytes, err = bp.bus.ReadByteBlock(LSM303ACCEL_ADDR, LSM303ACCEL_OUT_X_L|0x80, 6)
 	if err == nil {
-		// Extract the values, divide by 8 to discard lowest 4 bits (which are meaningless)
-		xi := int16(uint16(bytes[0])|(uint16(bytes[1])<<8)) / 8
-		yi := int16(uint16(bytes[2])|(uint16(bytes[3])<<8)) / 8
-		zi := int16(uint16(bytes[4])|(uint16(bytes[5])<<8)) / 8
-		x = float32(xi) * LSM303ACCEL_Accel_MG_LSB * LSM303ACCEL_GRAVITY_EARTH
-		y = float32(yi) * LSM303ACCEL_Accel_MG_LSB * LSM303ACCEL_GRAVITY_EARTH
-		z = float32(zi) * LSM303ACCEL_Accel_MG_LSB * LSM303ACCEL_GRAVITY_EARTH
+		// Extract the values
+		x = int16(uint16(bytes[0]) | (uint16(bytes[1]) << 8))
+		y = int16(uint16(bytes[2]) | (uint16(bytes[3]) << 8))
+		z = int16(uint16(bytes[4]) | (uint16(bytes[5]) << 8))
+	}
+	return
+}
+
+// Return adjusted x, y, z values
+func (bp *LSM303ACCEL) ReadXYZ() (x, y, z float32, err error) {
+	var (
+		xi, yi, zi int16
+	)
+	xi, yi, zi, err = bp.ReadRaw()
+	if err == nil {
+		x = float32(xi) - bp.biasX
+		y = float32(yi) - bp.biasY
+		z = float32(zi) - bp.biasZ
+	}
+	return
+}
+
+// Take a sample
+func (bp *LSM303ACCEL) Measure() {
+	var (
+		err     error
+		x, y, z int16
+	)
+	x, y, z, err = bp.ReadRaw()
+	if err == nil {
+		bp.sampleX += int(x)
+		bp.sampleY += int(y)
+		bp.sampleZ += int(z)
+		bp.sampleCnt++
+	}
+}
+
+// Evaluate the samples
+func (bp *LSM303ACCEL) Evaluate() (x, y, z float32, err error) {
+	if bp.sampleCnt > 0 {
+		x = float32(bp.sampleX/bp.sampleCnt) - bp.biasX
+		y = float32(bp.sampleY/bp.sampleCnt) - bp.biasY
+		z = float32(bp.sampleZ/bp.sampleCnt) - bp.biasZ
+		bp.sampleCnt, bp.sampleX, bp.sampleY, bp.sampleZ = 0, 0, 0, 0
+	} else {
+		err = errors.New("No accelerometer samples to Evaluate")
+	}
+	return
+}
+
+// Compute bias from samples
+func (bp *LSM303ACCEL) ComputeBias() (err error) {
+	if bp.sampleCnt > 0 {
+		bp.biasX = float32(bp.sampleX / bp.sampleCnt)
+		bp.biasY = float32(bp.sampleY / bp.sampleCnt)
+		bp.biasZ = float32(bp.sampleZ / bp.sampleCnt)
+		bp.sampleCnt, bp.sampleX, bp.sampleY, bp.sampleZ = 0, 0, 0, 0
+	} else {
+		err = errors.New("No accelerometer samples to ComputeBias")
 	}
 	return
 }

@@ -1,6 +1,7 @@
 package sensors
 
 import (
+	"errors"
 	"goPiCopter/i2c"
 )
 
@@ -49,8 +50,15 @@ const (
 )
 
 type L3GD20 struct {
-	bus      *i2c.I2CBus
-	dpsRange byte
+	bus       *i2c.I2CBus
+	dpsRange  byte
+	biasX     float32
+	biasY     float32
+	biasZ     float32
+	sampleX   int
+	sampleY   int
+	sampleZ   int
+	sampleCnt int
 }
 
 // Return a new Device
@@ -92,31 +100,91 @@ func (bp *L3GD20) ReadTemperature() (deg int8, err error) {
 	return
 }
 
-// Read the X, Y, and Z values from their registers,
-// and adjust them according to the current sensitivity
-func (bp *L3GD20) ReadXYZ() (x, y, z float32, err error) {
+// Read the raw x, y, z values from their registers
+func (bp *L3GD20) ReadRaw() (x, y, z int16, err error) {
 	var bytes []byte
 	bytes, err = bp.bus.ReadByteBlock(L3GD20_ADDR, L3GD20_OUT_X_L|0x80, 6)
 	if err == nil {
-		// Extract the values
-		xi := int16(uint16(bytes[0]) | (uint16(bytes[1]) << 8))
-		yi := int16(uint16(bytes[2]) | (uint16(bytes[3]) << 8))
-		zi := int16(uint16(bytes[4]) | (uint16(bytes[5]) << 8))
+		// Extract the values  (warning: swapped the X/Y because of my layout)
+		y = int16(uint16(bytes[0]) | (uint16(bytes[1]) << 8)) // X
+		x = int16(uint16(bytes[2]) | (uint16(bytes[3]) << 8)) // Y
+		z = int16(uint16(bytes[4]) | (uint16(bytes[5]) << 8)) // Z
+	}
+	return
+}
+
+// Return adjusted x, y, z values
+func (bp *L3GD20) ReadXYZ() (x, y, z float32, err error) {
+	var (
+		sensitivity float32 = 1.0
+		xi, yi, zi int16
+	)
+	xi, yi, zi, err = bp.ReadRaw()
+	if err == nil {
 		// Compensate values depending on the sensitivity
 		switch bp.dpsRange {
 		case L3GD20_RANGE_250DPS:
-			x = float32(xi) * L3GD20_SENSITIVITY_250DPS
-			y = float32(yi) * L3GD20_SENSITIVITY_250DPS
-			z = float32(zi) * L3GD20_SENSITIVITY_250DPS
+			sensitivity = L3GD20_SENSITIVITY_250DPS
 		case L3GD20_RANGE_500DPS:
-			x = float32(xi) * L3GD20_SENSITIVITY_500DPS
-			y = float32(yi) * L3GD20_SENSITIVITY_500DPS
-			z = float32(zi) * L3GD20_SENSITIVITY_500DPS
+			sensitivity = L3GD20_SENSITIVITY_500DPS
 		case L3GD20_RANGE_2000DPS:
-			x = float32(xi) * L3GD20_SENSITIVITY_2000DPS
-			y = float32(yi) * L3GD20_SENSITIVITY_2000DPS
-			z = float32(zi) * L3GD20_SENSITIVITY_2000DPS
+			sensitivity = L3GD20_SENSITIVITY_2000DPS
 		}
+		x = (float32(xi) - bp.biasX) * sensitivity
+		y = (float32(yi) - bp.biasY) * sensitivity
+		z = (float32(zi) - bp.biasZ) * sensitivity
+	}
+	return
+}
+
+// Take a sample
+func (bp *L3GD20) Measure() {
+	var (
+		err     error
+		x, y, z int16
+	)
+	x, y, z, err = bp.ReadRaw()
+	if err == nil {
+		bp.sampleX += int(x)
+		bp.sampleY += int(y)
+		bp.sampleZ += int(z)
+		bp.sampleCnt++
+	}
+}
+
+// Evaluate the samples
+func (bp *L3GD20) Evaluate() (x, y, z float32, err error) {
+	var (
+		sensitivity float32 = 1.0
+	)
+	if bp.sampleCnt > 0 {
+		switch bp.dpsRange {
+		case L3GD20_RANGE_250DPS:
+			sensitivity = L3GD20_SENSITIVITY_250DPS
+		case L3GD20_RANGE_500DPS:
+			sensitivity = L3GD20_SENSITIVITY_500DPS
+		case L3GD20_RANGE_2000DPS:
+			sensitivity = L3GD20_SENSITIVITY_2000DPS
+		}
+		x = (float32(bp.sampleX/bp.sampleCnt) - bp.biasX) * sensitivity
+		y = (float32(bp.sampleY/bp.sampleCnt) - bp.biasY) * sensitivity
+		z = (float32(bp.sampleZ/bp.sampleCnt) - bp.biasZ) * sensitivity
+		bp.sampleCnt, bp.sampleX, bp.sampleY, bp.sampleZ = 0, 0, 0, 0
+	} else {
+		err = errors.New("No gyroscope samples to Evaluate")
+	}
+	return
+}
+
+// Compute bias from samples
+func (bp *L3GD20) ComputeBias() (err error) {
+	if bp.sampleCnt > 0 {
+		bp.biasX = float32(bp.sampleX/bp.sampleCnt)
+		bp.biasY = float32(bp.sampleY/bp.sampleCnt)
+		bp.biasZ = float32(bp.sampleZ/bp.sampleCnt)
+		bp.sampleCnt, bp.sampleX, bp.sampleY, bp.sampleZ = 0, 0, 0, 0
+	} else {
+		err = errors.New("No gyroscope samples to ComputeBias")
 	}
 	return
 }

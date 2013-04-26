@@ -17,19 +17,22 @@ import (
 * on a RaspberryPi model B.
 **/
 func main() {
+	const (
+		d2r = math.Pi / 180.0 // Used to convert degrees to radians
+		r2d = 180.0 / math.Pi // Used to convert radians to degrees
+	)
 	var (
 		gyroscope     *sensors.L3GD20      = nil
 		accelerometer *sensors.LSM303ACCEL = nil
 		magnetometer  *sensors.LSM303MAG   = nil
 		imu           *imus.ImuMayhony     = nil
 
-		err                 error
-		dbgPrint            bool
-		gx, gy, gz          float32 // Gyroscope data
-		ax, ay, az          float32 // Accelerometer data
-		mx, my, mz          float32 // Magnetometer data
-		yaw, pitch, roll    float32 // IMU results in degrees
-		yawR, pitchR, rollR float32 // IMU results in radians
+		err              error
+		dbgPrint         bool
+		gx, gy, gz       float32 // Gyroscope rate in degrees
+		ax, ay, az       float32 // Accelerometer data
+		mx, my, mz       float32 // Magnetometer data
+		yaw, pitch, roll float32 // IMU results in radians
 	)
 
 	gyroscope, err = sensors.NewL3GD20()
@@ -57,19 +60,16 @@ func main() {
 		startTime := time.Now().UnixNano()
 		for i := 0; i < maxIterations; i++ {
 			dbgPrint = (i % 100) == 0
+			now := time.Now().UnixNano()
 			gx, gy, gz, err = gyroscope.ReadXYZ()
 			if err == nil {
 				ax, ay, az, err = accelerometer.ReadXYZ()
 				if err == nil {
 					mx, my, mz, err = magnetometer.ReadXYZ()
 					if err == nil {
-						yawR, pitchR, rollR = imu.GetYawPitchRoll(gx, gy, gz, ax, ay, az, mx, my, mz)
-						// Convert to degrees
-						yaw   = yawR   * (180.0 / math.Pi)
-						pitch = pitchR * (180.0 / math.Pi)
-						roll  = rollR  * (180.0 / math.Pi)
+						yaw, pitch, roll = imu.Update(now, gx*d2r, gy*d2r, gz*d2r, ax, ay, az, mx, my, mz)
 						if dbgPrint {
-							fmt.Printf("  YPR(%9.5f, %9.5f, %9.5f)\n", yaw, pitch, roll)
+							fmt.Printf("  YPR(%10.5f, %10.5f, %10.5f)\n", yaw*r2d, pitch*r2d, roll*r2d)
 						}
 					} else {
 						fmt.Printf("Error: reading magnetometer, err=%v\n", err)

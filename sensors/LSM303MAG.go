@@ -107,16 +107,27 @@ func (bp *LSM303MAG) SetGain(gain byte) (err error) {
 	return
 }
 
-// Read the X, Y, and Z values from their registers,
-// and adjust them according to the magnetic gain setting
-func (bp *LSM303MAG) ReadXYZ() (x, y, z float32, err error) {
+// Read the raw x, y, z values from their registers
+func (bp *LSM303MAG) ReadRaw() (x, y, z int16, err error) {
 	var bytes []byte
 	bytes, err = bp.bus.ReadByteBlock(LSM303MAG_ADDR, LSM303MAG_OUT_X_H|0x80, 6)
 	if err == nil {
 		// Extract the values (higb byte first) and x, z, y order
-		xi := int16(uint16(bytes[1]) | (uint16(bytes[0]) << 8))
-		zi := int16(uint16(bytes[3]) | (uint16(bytes[2]) << 8))
-		yi := int16(uint16(bytes[5]) | (uint16(bytes[4]) << 8))
+		x = int16(uint16(bytes[1]) | (uint16(bytes[0]) << 8))
+		z = int16(uint16(bytes[3]) | (uint16(bytes[2]) << 8))
+		y = int16(uint16(bytes[5]) | (uint16(bytes[4]) << 8))
+	}
+	return
+}
+
+// Read the X, Y, and Z values from their registers,
+// and adjust them according to the magnetic gain setting
+func (bp *LSM303MAG) ReadXYZ() (x, y, z float32, err error) {
+	var (
+		xi, yi, zi int16
+	)
+	xi, yi, zi, err = bp.ReadRaw()
+	if err == nil {
 		// Apply the gain
 		x = float32(xi) / bp.gauss_lsb_xy * LSM303MAG_SENSORS_GAUSS_TO_MICROTESLA
 		y = float32(yi) / bp.gauss_lsb_xy * LSM303MAG_SENSORS_GAUSS_TO_MICROTESLA

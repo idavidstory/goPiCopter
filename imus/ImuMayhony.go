@@ -42,7 +42,7 @@ func invSqrt(x float32) float32 {
 * direction of flux (bx bz) to be predefined and limits the effect of magnetic distortions to yaw
 * axis only.
 * 
-* @see: http://www.x-io.co.uk/node/8#open_source_ahrs_and_imu_algorithms
+* @see: http://www.x-io.co.uk/open-source-imu-and-ahrs-algorithms/
 **/
 func ahrsUpdate(imu *ImuMayhony, gx, gy, gz, ax, ay, az, mx, my, mz float32) {
 	var (
@@ -153,56 +153,23 @@ func ahrsUpdate(imu *ImuMayhony, gx, gy, gz, ax, ay, az, mx, my, mz float32) {
 }
 
 /**
-* Populate the Quaternion representing the IMU orientation with respect to Earth.
-**/
-func getQuaternion(imu *ImuMayhony, gx, gy, gz, ax, ay, az, mx, my, mz float32) (q [4]float32) {
-	gx *= (math.Pi / 180.0)
-	gy *= (math.Pi / 180.0)
-	gz *= (math.Pi / 180.0)
-	now := time.Now().UnixNano()
-	imu.sampleFreq = 1.0 / (float32(now-imu.lastUpdate) / 1000000000.0)
-	imu.lastUpdate = now
-	ahrsUpdate(imu, gx, gy, gz, ax, ay, az, mx, my, mz)
-	q[0] = imu.q0
-	q[1] = imu.q1
-	q[2] = imu.q2
-	q[3] = imu.q3
-	return
-}
-
-/**
-* Returns the Euler angles in radians defined in the Aerospace sequence.
-* See Sebastian O.H. Madwick report "An efficient orientation filter for 
-* inertial and intertial/magnetic sensor arrays" Chapter 2 Quaternion representation
-* 
-* Returns the Euler angles in radians
-**/
-func (imu *ImuMayhony) GetEuler(gx, gy, gz, ax, ay, az, mx, my, mz float32) (psi, theta, phi float32) {
-	q := getQuaternion(imu, gx, gy, gz, ax, ay, az, mx, my, mz)
-	psi   = float32(math.Atan2(float64(2.0*q[1]*q[2]-2.0*q[0]*q[3]), float64(2.0*q[0]*q[0]+2.0*q[1]*q[1]-1.0))) // psi
-	theta = -float32(math.Asin(float64(2.0*q[1]*q[3] + 2.0*q[0]*q[2])))                                       // theta
-	phi   = float32(math.Atan2(float64(2.0*q[2]*q[3]-2.0*q[0]*q[1]), float64(2.0*q[0]*q[0]+2.0*q[3]*q[3]-1.0))) // phi
-	return
-}
-
-/**
 * Returns the yaw pitch and roll angles, respectively defined as the angles in radians between
-* the Earth North and the IMU X axis (yaw), the Earth ground plane and the IMU X axis (pitch)
-* and the Earth ground plane and the IMU Y axis.
-* 
-* @note This is not an Euler representation: the rotations aren't consecutive rotations but only
-* angles from Earth and the IMU. For Euler representation Yaw, Pitch and Roll see FreeIMU::getEuler
-* 
+* the Earth North and the IMU Z axis (yaw), the Earth ground plane and the IMU Y axis (pitch)
+* and the Earth ground plane and the IMU X axis (roll).
+*
 * Returns Yaw, Pitch and Roll angles in radians
 **/
-func (imu *ImuMayhony) GetYawPitchRoll(gx, gy, gz, ax, ay, az, mx, my, mz float32) (yaw, pitch, roll float32) {
-	var gravx, gravy, gravz float64 // estimated gravity direction
-	q := getQuaternion(imu, gx, gy, gz, ax, ay, az, mx, my, mz)
-	gravx = float64(2.0 * (q[1]*q[3] - q[0]*q[2]))
-	gravy = float64(2.0 * (q[0]*q[1] + q[2]*q[3]))
-	gravz = float64(q[0]*q[0] - q[1]*q[1] - q[2]*q[2] + q[3]*q[3])
-
-	yaw   = float32(math.Atan2(float64(2.0*q[1]*q[2]-2.0*q[0]*q[3]), float64(2.0*q[0]*q[0]+2.0*q[1]*q[1]-1.0)))
+func (imu *ImuMayhony) Update(when int64, gx, gy, gz, ax, ay, az, mx, my, mz float32) (yaw, pitch, roll float32) {
+	var (
+		gravx, gravy, gravz float64 // estimated gravity direction
+	)
+	imu.sampleFreq = 1.0 / (float32(when-imu.lastUpdate) / 1000000000.0) // nanoseconds to fractions of a second
+	imu.lastUpdate = when
+	ahrsUpdate(imu, gx, gy, gz, ax, ay, az, mx, my, mz)
+	gravx = float64(2.0 * (imu.q1*imu.q3 - imu.q0*imu.q2))
+	gravy = float64(2.0 * (imu.q0*imu.q1 + imu.q2*imu.q3))
+	gravz = float64(imu.q0*imu.q0 - imu.q1*imu.q1 - imu.q2*imu.q2 + imu.q3*imu.q3)
+	yaw   = float32(math.Atan2(float64(2.0*imu.q1*imu.q2-2.0*imu.q0*imu.q3), float64(2.0*imu.q0*imu.q0+2.0*imu.q1*imu.q1-1.0)))
 	pitch = float32(math.Atan(gravx / math.Sqrt(gravy*gravy+gravz*gravz)))
 	roll  = float32(math.Atan(gravy / math.Sqrt(gravx*gravx+gravz*gravz)))
 	return
