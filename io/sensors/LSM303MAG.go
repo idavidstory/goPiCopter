@@ -1,7 +1,7 @@
 package sensors
 
 import (
-	"goPiCopter/i2c"
+	"goPiCopter/io/sensors/i2c"
 )
 
 /**
