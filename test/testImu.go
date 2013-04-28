@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"goPiCopter/imus"
-	"goPiCopter/sensors"
+	"goPiCopter/io/sensors"
 	"math"
 	"time"
 )

@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"goPiCopter/sensors"
+	"goPiCopter/io/sensors"
 	"time"
 )
 
